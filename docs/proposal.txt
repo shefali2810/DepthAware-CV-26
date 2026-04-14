@@ -1,0 +1,91 @@
+Enhancing Depth-Aware Spatial Reasoning of VLMs using Multi-View Consistency
+Problem Statement
+We aim to improve depth-aware spatial reasoning in Vision-Language Models (VLMs) by fine-tuning them on depth-grounded VQA data generated from multi-view images. Existing VLMs rely on monocular depth–based labels, which often lead to spatial hallucinations (e.g., confusing poster of a toy car with a real car). To address this, we propose a multi-view consistency–based pipeline that acts as a 'lie detector'. We will use multi-view consistency to do an additional geometric validation on the VQA dataset and will train only on a filtered subset of data where both the monocular and multi-view models agree, ensuring that VLM learns robust, physically consistent representations.
+Background
+SpatialVLM (Chen et al., 2024) shows that training VLMs with lifted 3D annotations significantly improves spatial reasoning. However, their pipeline relies on monocular depth estimators to generate large-scale VQA data, making reasoning quality dependent on single-view depth accuracy. The lack of geometric verification causes the model to rely on semantic priors rather than true physical geometry, limiting reliability.
+Methodology
+We propose a Geometric Consistency Stage that filters and refines training data using multi-view geometry. We will use DUSt3R on image pairs to generate a raw, uncalibrated 3D point map based on triangulation. 
+Validation Logic: Compare the Monocular Depth against this Geometric Depth
+Geometric Verification: We use DUSt3R to generate dense, uncalibrated 3D point maps from multi-view images. Samples where the monocular depth disagrees with the multi-view geometry beyond a threshold are treated as hallucinations and discarded, retaining only geometrically consistent image pairs.
+Sparse VQA Generation: For the verified subset (~50k images), a teacher model (e.g., LLaVA-v1.6-7B) generates a single spatial question-answer pair per image (e.g., "How far is the chair from the table?" -> "1.2 meters").
+Result: A small but geometrically consistent dataset (~50k samples) that will be used to fine-tune the base model. 
+Training: We plan to utilise LoRA to efficiently adapt the Qwen2.5-VL-3B base model to understand spatial depth without modifying its pre-trained weights. 
+
+Evaluation Plan
+Metric Accuracy: Evaluate Zero-Shot depth estimation on the NYU-Depth V2 and RealEstate10K
+Hallucination Rate: Create a specific Adversarial Spatial Test Set containing optical illusions (e.g., mirrors, photos of objects, etc). 
+Reasoning Capability: Use the SpatialSense benchmark to evaluate the model's ability to describe spatial relationships (e.g., "left of", "closer than") in complex scenes.
+
+Work Distribution 
+A team of two members will carry out the project. One member will focus on dataset preparation, query formulation, and implementation of evaluation metrics. The other member will focus on running the models, conducting ablation experiments, and organizing results. Both members will jointly contribute to analysis, report writing, and the final presentation
+Compute
+Available computation resources are Kaggle, Colab, and ADA account access. To reduce the compute budget, we use a subset of images from MVImgNet and apply a filter-first pipeline, by ensuring that computationally heavy text generation is performed only on high-quality samples.DUSt3R and monocular depth estimation run only in inference mode, requiring approximately 8–10 GB and 6–8 GB GPU VRAM, while LoRA fine-tuning requires 12–16 GB VRAM. Under these constraints, the total compute cost remains modest (<10 GPU-hours) and is fully supported by the available resources.
+Literature Survey
+SpatialVLM (Chen et al., 2024): Studies the 3D spatial reasoning of VLMs by training them on large-scale data generated grounded in depth information using Monocular Depth Estimators.
+DUSt3R (Wang et al., 2024): Introduces a way to do 3D reconstruction using multi-view images without the need for camera intrinsics and prior. It does this by ensuring that the pixels corresponding across different views map to the same 3D point.
+MVImgNet (Yu et al., 2023): Provides the necessary scale of multi-view object data to bridge the gap between specific 3D datasets (ScanNet) and general 2D datasets (ImageNet).
+VGGT (Wang et al., 2025): Explores Visual Geometry Grounded Transformers, relevant for integrating the geometric embeddings into the VLM architecture.
+
+
+Depth-Aware Spatial Reasoning Pipeline
+Proposed Changes
+The project consists of five main phases: data preparation, filtering, edge case analysis, monocular fusion, and VLM training with CoT.
+Phase 1: Data Collection & Preparation Strategy
+Training Data Mixture (100k samples):
+Normal samples
+40% ScanNet: For complex, cluttered indoor semantics and relative depth.
+30% RealEstate10K / DL3DV: For room-scale architectural depth.
+15% KITTI-360: To expand the model's capability to outdoor, far-field depth.
+Adversarial samples
+15% Adversarial / Illusions: Difficult samples (posters, mirrors, visual paradoxes) to teach the model to be skeptical of these edge cases
+
+Semantic Pre-filtering: Run Florence-2 / CLIP Semantic Filter on input frames to discard simple or empty scenes (e.g., single objects or blank walls) to ensure complex backgrounds.'
+
+Evaluation Data Mixture:
+- Baseline Competence Set: Standard spatial data to measure general accuracy.
+- Adversarial Robustness Set: Difficult edge cases to evaluate how well the model handles visual paradoxes.
+Phase 2: Confidence Filtering
+Action: Use DUSt3R confidence scores to filter 100k image pairs down to 50k clean, verifiable pairs. Discard the low-confidence 50k.
+Result: Save Image A and its DUSt3R Depth Map. Delete Image B.
+Phase 3: Scale Alignment & Edge Case Detection
+Action: Compare DUSt3R Depth vs. MDE (Monocular Depth Estimation, e.g., DepthPro or VGGT) Depth to find the scale multiplier.
+Golden Edge Cases: Identify massive discrepancies (shape mismatch). Flag them as "Golden Edge Cases."
+Application: Write Chain-of-Thought (CoT) VQA pairs for these edge cases to teach the model not to fall for the Oracle Paradox.
+Phase 4: Monocular Pipeline Fusion (Inside VQASynth)
+Input: Image A.
+Action: Run monocular estimator (DepthPro) to guess metric scale. Load DUSt3R Depth Map from Phase 2. Use DepthPro's scale to calculate multiplier (S) and apply it to the DUSt3R map.
+Result: Metrically scaled 3D map for Image A.
+Phase 5: Fine Tuning the VLM
+Fine-Tuning Method: Fine-tune the base model (Qwen2.5-VL-3B) using LoRA (Low-Rank Adaptation) adapters for efficiency.
+Input Image: Image A (Single Image).
+VQA Pairs:
+- Standard single image VQA questions.
+- Chain-of-Thought (CoT) VQA pairs for "Golden Edge Cases" to prevent hallucination.
+Open Questions
+- What specific scripts are needed to automate Phase 1 (DUSt3R runner + filter)?
+- How exactly is the fusion step (applying DepthPro scale to DUSt3R depth) implemented in VQASynth codebase?
+- What are the evaluation metrics for spatial reasoning tasks?
+- How to programmatically generate Chain-of-Thought (CoT) text describing shape discrepancies for the Golden Edge Cases?
+Verification Plan
+Automated Verification
+- Unit test for data loading pipelines to verify Image A and fused depth maps are loaded correctly.
+- Test script to run dummy inference on single images using base model vs fine-tuned model.
+Manual Verification
+- Visual inspection of DUSt3R depth maps and confidence filtering results.
+- Visual inspection of final fused metrically scaled depth maps.
+- Verification of Golden Edge Cases detection and Chain-of-Thought (CoT) generation accuracy.
+
+Evaluation Metrics
+The benchmark uses a mix of metrics depending on whether the task is qualitative or quantitative:
+A. Accuracy (Standard & Exact Match)
+For Judgment (Yes/No) and Multi-choice questions, the script calculates standard accuracy.
+SpatialScore-Hard: A specific subset where a model only gets a point if it answers both an original question and its "flipped" version correctly (e.g., "Is A left of B?" and "Is B right of A?"). This prevents the model from "guessing" or relying on linguistic bias.
+B. Metric Error (Threshold-based)
+For Depth and Distance estimation, accuracy is defined by a 10% tolerance rule:
+| {Predicted} - {Ground Truth} | < 0.1 * {Ground Truth}
+If the model says an object is 1.1m away and the truth is 1.0m, it’s a "hit." If it says 1.2m, it’s a "miss."
+C. Geometric Metrics (for VGBench)
+For specific geometry tasks (like camera pose), the script may calculate:
+Rotation Error: Measured in degrees.
+Translation Error: Measured in relative or metric distance.
+

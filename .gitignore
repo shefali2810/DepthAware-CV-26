@@ -1,0 +1,39 @@
+# Ignore environments
+.env
+.venv
+env/
+venv/
+ENV/
+.git_backup
+.micromamba/
+mamba_bin
+
+# Security
+push_to_github.sh
+
+# Datasets and Media
+dataset/
+!dataset/.gitkeep
+filtered_data/
+adversarial_data/
+dataset/adversarial_data/
+dummy_maps/
+dummy_pts/
+processed_data/
+VQASynth_Dataset/
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.zip
+*.json
+!format_scannet.json
+
+# Cache
+__pycache__/
+*.py[cod]
+
+# Models/Weights
+dust3r/croco/models/
+*.safetensors
+*.pt
